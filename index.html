@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NutriLens - Smart Calorie Tracker</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3498db;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen">
+        <nav class="bg-white shadow-sm">
+            <div class="container mx-auto px-4 py-4">
+                <h1 class="text-2xl font-bold text-teal-600">NutriLens <i class="bi bi-camera"></i></h1>
+            </div>
+        </nav>
+
+        <main class="container mx-auto px-4 py-8">
+            <!-- Goals Section -->
+            <section class="mb-8" v-if="!goalSet">
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <h2 class="text-xl font-semibold mb-4">Set Your Goals</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block mb-2">Current Weight (kg)</label>
+                            <input type="number" v-model="currentWeight" class="w-full p-2 border rounded">
+                        </div>
+                        <div>
+                            <label class="block mb-2">Target Weight (kg)</label>
+                            <input type="number" v-model="targetWeight" class="w-full p-2 border rounded">
+                        </div>
+                        <div>
+                            <label class="block mb-2">Height (cm)</label>
+                            <input type="number" v-model="height" class="w-full p-2 border rounded">
+                        </div>
+                        <div>
+                            <label class="block mb-2">Activity Level</label>
+                            <select v-model="activityLevel" class="w-full p-2 border rounded">
+                                <option value="1.2">Sedentary</option>
+                                <option value="1.375">Light Exercise</option>
+                                <option value="1.55">Moderate Exercise</option>
+                                <option value="1.725">Heavy Exercise</option>
+                            </select>
+                        </div>
+                        <button @click="calculateCalorieGoal" class="w-full bg-teal-600 text-white py-2 rounded hover:bg-teal-700">
+                            Set Goals
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Main Tracking Section -->
+            <section v-else class="grid md:grid-cols-2 gap-8">
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <h2 class="text-xl font-semibold mb-4">Daily Goals</h2>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <span>Daily Calorie Goal:</span>
+                            <span class="font-semibold">{{dailyCalorieGoal}} kcal</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span>Calories Consumed:</span>
+                            <span class="font-semibold">{{caloriesConsumed}} kcal</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span>Remaining:</span>
+                            <span class="font-semibold text-teal-600">{{dailyCalorieGoal - caloriesConsumed}} kcal</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <h2 class="text-xl font-semibold mb-4">Analyze Your Meal</h2>
+                    <div class="space-y-4">
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center" 
+                             @dragover.prevent 
+                             @drop.prevent="handleDrop">
+                            <input type="file" 
+                                   @change="handleFileSelect" 
+                                   ref="fileInput" 
+                                   accept="image/*" 
+                                   class="hidden">
+                            <div v-if="!selectedImage" class="space-y-2">
+                                <i class="bi bi-cloud-upload text-4xl text-gray-400"></i>
+                                <p>Drag and drop your meal photo or</p>
+                                <button @click="$refs.fileInput.click()" 
+                                        class="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700">
+                                    Choose File
+                                </button>
+                            </div>
+                            <img v-else :src="selectedImage" class="max-h-48 mx-auto">
+                        </div>
+
+                        <button v-if="selectedImage && !analyzing" 
+                                @click="analyzeImage" 
+                                class="w-full bg-teal-600 text-white py-2 rounded hover:bg-teal-700">
+                            Analyze Meal
+                        </button>
+
+                        <div v-if="analyzing" class="flex justify-center">
+                            <div class="loader"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analysis Results -->
+            <section v-if="analysisResult" class="mt-8">
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <h2 class="text-xl font-semibold mb-4">Meal Analysis</h2>
+                    <div class="grid md:grid-cols-4 gap-4">
+                        <div class="p-4 bg-teal-50 rounded">
+                            <p class="text-sm text-gray-600">Calories</p>
+                            <p class="text-xl font-semibold">{{nutritionInfo.calories}} kcal</p>
+                        </div>
+                        <div class="p-4 bg-blue-50 rounded">
+                            <p class="text-sm text-gray-600">Protein</p>
+                            <p class="text-xl font-semibold">{{nutritionInfo.protein}}g</p>
+                        </div>
+                        <div class="p-4 bg-yellow-50 rounded">
+                            <p class="text-sm text-gray-600">Carbs</p>
+                            <p class="text-xl font-semibold">{{nutritionInfo.carbs}}g</p>
+                        </div>
+                        <div class="p-4 bg-red-50 rounded">
+                            <p class="text-sm text-gray-600">Fat</p>
+                            <p class="text-xl font-semibold">{{nutritionInfo.fat}}g</p>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <h3 class="font-semibold mb-2">Suggestions</h3>
+                        <p class="text-gray-600">{{suggestion}}</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    currentWeight: null,
+                    targetWeight: null,
+                    height: null,
+                    activityLevel: '1.2',
+                    goalSet: false,
+                    dailyCalorieGoal: 0,
+                    caloriesConsumed: 0,
+                    selectedImage: null,
+                    analyzing: false,
+                    analysisResult: null,
+                    nutritionInfo: {
+                        calories: 0,
+                        protein: 0,
+                        carbs: 0,
+                        fat: 0
+                    },
+                    suggestion: ''
+                }
+            },
+            methods: {
+                calculateCalorieGoal() {
+                    // Basic BMR calculation using Mifflin-St Jeor Equation
+                    const bmr = (10 * this.currentWeight) + (6.25 * this.height) - 5;
+                    const tdee = bmr * parseFloat(this.activityLevel);
+                    
+                    // Adjust based on weight goal
+                    const weightDiff = this.currentWeight - this.targetWeight;
+                    const adjustment = weightDiff * 7700 / 30; // Spread over 30 days
+                    
+                    this.dailyCalorieGoal = Math.round(tdee - adjustment);
+                    this.goalSet = true;
+                },
+                handleFileSelect(event) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        this.loadImage(file);
+                    }
+                },
+                handleDrop(event) {
+                    const file = event.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) {
+                        this.loadImage(file);
+                    }
+                },
+                loadImage(file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.selectedImage = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                },
+                async analyzeImage() {
+                    this.analyzing = true;
+                    
+                    try {
+                        // First upload the image
+                        const formData = new FormData();
+                        const imageFile = await fetch(this.selectedImage)
+                            .then(r => r.blob())
+                            .then(blobFile => new File([blobFile], "image.jpg", { type: "image/jpeg" }));
+                        
+                        formData.append('file', imageFile);
+                        formData.append('userId', 'user123');
+                        formData.append('appSlug', 'nutrilens');
+
+                        const uploadResponse = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/storage/upload', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': 'Bearer yDONEUokSENbqcO1oSo2wwD7sod2'
+                            },
+                            body: formData
+                        });
+
+                        const uploadResult = await uploadResponse.json();
+
+                        // Now analyze the image
+                        const aiResponse = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/ai', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': 'Bearer yDONEUokSENbqcO1oSo2wwD7sod2',
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                messages: [{
+                                    role: "user",
+                                    content: [
+                                        {
+                                            type: "text",
+                                            text: "Analyze this meal and provide nutritional information including calories, protein, carbs, and fat content. Format the response as JSON."
+                                        },
+                                        {
+                                            type: "image_url",
+                                            image_url: {
+                                                url: uploadResult.url
+                                            }
+                                        }
+                                    ]
+                                }]
+                            })
+                        });
+
+                        const result = await aiResponse.json();
+                        
+                        // Parse the AI response to get nutritional information
+                        const analysis = JSON.parse(result.message);
+                        this.nutritionInfo = analysis;
+                        this.caloriesConsumed += analysis.calories;
+                        
+                        // Generate suggestion
+                        const remaining = this.dailyCalorieGoal - this.caloriesConsumed;
+                        this.suggestion = remaining > 0 
+                            ? `You have ${remaining} calories remaining for today. Consider having a balanced meal with lean protein and vegetables.`
+                            : `You've reached your calorie goal for today. Consider light snacks if needed.`;
+                            
+                        this.analysisResult = true;
+                    } catch (error) {
+                        console.error('Error analyzing image:', error);
+                        alert('Error analyzing image. Please try again.');
+                    } finally {
+                        this.analyzing = false;
+                    }
+                }
+            }
+        }).mount('#app')
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
